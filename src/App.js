@@ -27,6 +27,7 @@ function App() {
   const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState("");
   const [mrp, setMrp] = useState("");
+  const [buyprice, setBuyprice] = useState("");
 
   // Billing and product states
   const [items, setItems] = useState([]);
@@ -46,6 +47,10 @@ function App() {
   const [billDate, setBillDate] = useState("");
   const [isBillingActive, setIsBillingActive] = useState(false);
 
+  const [cashGiven, setCashGiven] = useState("");
+  const [paymentMode, setPaymentMode] = useState("Cash");
+
+  const [billStatus, setBillStatus] = useState("");
 
   // Load custom products from localStorage
   useEffect(() => {
@@ -81,8 +86,8 @@ function App() {
 
   // Add item to bill
   const addItem = () => {
-    if (productName && quantity > 0 && price > 0 && mrp > 0) {
-      const profit = price - mrp;
+    if (productName && quantity > 0 && price > 0 && mrp > 0 && buyprice > 0) {
+      const profit = price - buyprice;
       const total = quantity * price;
       const totalProfit = profit * quantity;
       setItems([
@@ -92,6 +97,7 @@ function App() {
           quantity: Number(quantity),
           price: Number(price),
           mrp: Number(mrp),
+          buyprice: Number(buyprice),
           profit,
           total,
           totalProfit,
@@ -101,6 +107,7 @@ function App() {
       setQuantity("");
       setPrice("");
       setMrp("");
+      setBuyprice("");
     } else {
       alert("Please enter valid product, quantity, price, and MRP.");
     }
@@ -146,6 +153,11 @@ function App() {
 
   // Print bill
   const printBill = () => {
+    if (!billStatus) {
+    alert("Please select the bill status before printing.");
+    return;
+  }
+
   window.print();
 
   // Save current bill to localStorage
@@ -159,6 +171,10 @@ function App() {
     custPhone,
     items,
     grandTotal,
+    paymentMode,
+    cashGiven,
+    billStatus,
+
   };
   localStorage.setItem("savedBills", JSON.stringify([...savedBills, newBill]));
 
@@ -169,7 +185,24 @@ function App() {
   setCustAddress("");
   setCustPhone("");
   setIsBillingActive(false); // triggers auto-start
+  setCashGiven("");
+  setPaymentMode("Cash");
+  setBillStatus("Pending");
+
   };
+
+  const clearBill = () => {
+  setItems([]);
+  setCustId("");
+  setCustName("");
+  setCustAddress("");
+  setCustPhone("");
+  setCashGiven("");
+  setPaymentMode("Cash");
+  setIsBillingActive(false); // triggers auto-start
+  setBillStatus("Pending");
+
+};
 
   return (
     <div className="App">
@@ -192,9 +225,45 @@ function App() {
             <input type="number" placeholder="Quantity" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
             <input type="number" placeholder="Price" value={price} onChange={(e) => setPrice(e.target.value)} />
             <input type="number" placeholder="MRP" value={mrp} onChange={(e) => setMrp(e.target.value)} />
+            <input type="number" placeholder="Buying Price" value={buyprice} onChange={(e) => setBuyprice(e.target.value)} />
             <button onClick={addItem}>Add Item</button>
             <button onClick={addCustomProduct}>Add to Custom List</button>
           </div>
+
+        <div className="input-section">
+          <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
+            <option value="Cash">Cash</option>
+            <option value="Card">Card</option>
+            <option value="UPI">UPI</option>
+          </select>
+
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="Cash Given"
+            value={cashGiven}
+            onChange={(e) => {
+              const value = e.target.value;
+              // Allow only valid decimal numbers
+              if (/^\d*\.?\d*$/.test(value)) {
+                setCashGiven(value);
+              }
+            }}
+            disabled={paymentMode !== "Cash"}
+          />
+        </div>
+
+        <div className="input-section">
+          <label>
+            Bill Status:
+            <select value={billStatus} onChange={(e) => setBillStatus(e.target.value)}>
+              <option value="">-- Select Bill Status --</option>
+              <option value="Paid">Paid</option>
+              <option value="Pending">Pending</option>
+            </select>
+          </label>
+        </div>
 
           {/* Bill Table */}
           {items.length > 0 && (
@@ -213,8 +282,9 @@ function App() {
                     <tr>
                       <th>Product</th>
                       <th>Qty</th>
-                      <th>Price</th>
-                      <th className="hide-print">MRP</th>
+                      <th>Unit Price</th>
+                      <th>MRP</th>
+                      <th className="hide-print">Buying Price</th>
                       <th className="hide-print">Profit</th>
                       <th>Total</th>
                       <th className="hide-print">Total Profit</th>
@@ -227,7 +297,8 @@ function App() {
                         <td>{item.productName}</td>
                         <td>{item.quantity}</td>
                         <td>${item.price.toFixed(2)}</td>
-                        <td className="hide-print">${item.mrp.toFixed(2)}</td>
+                        <td>${item.mrp.toFixed(2)}</td>
+                        <td className="hide-print">${item.buyprice.toFixed(2)}</td>
                         <td className="hide-print">${item.profit.toFixed(2)}</td>
                         <td>${item.total.toFixed(2)}</td>
                         <td className="hide-print">${item.totalProfit.toFixed(2)}</td>
@@ -239,8 +310,19 @@ function App() {
                   </tbody>
                 </table>
                 <h2>Grand Total: ${grandTotal.toFixed(2)}</h2>
+                <p><strong>Payment Mode:</strong> {paymentMode}</p>
+                {paymentMode === "Cash" && (
+                  <p><strong>Cash Given:</strong> ${Number(cashGiven).toFixed(2)}</p>
+                )}
+                {paymentMode === "Cash" && cashGiven > 0 && (
+                  <p><strong>Balance Returned:</strong> ${(cashGiven - grandTotal).toFixed(2)}</p>
+                )}
+                <p><strong>Bill Status:</strong> {billStatus}</p>
               </div>
-              <button onClick={printBill}>🧾 Print Bill</button>
+              <div className="no-print" style={{ marginTop: "1rem" }}>
+                <button onClick={printBill}>🧾 Print Bill</button>
+                <button onClick={clearBill}>🧹 Clear Bill</button>
+              </div>
             </>
           )}
         </div>
