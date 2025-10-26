@@ -1,0 +1,39 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.App {
+  padding: 1rem;
+}
+
+.split-layout {
+  display: flex;
+  gap: 1rem;
+}
+
+/* Print styles */
+@media print {
+  .no-print,
+  th.no-print,
+  td.no-print,
+  .hide-print,
+  th.hide-print,
+  td.hide-print {
+    display: none !important;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  .split-layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    display: none;
+  }
+}

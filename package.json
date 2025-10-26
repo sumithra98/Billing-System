@@ -2,6 +2,15 @@
   "name": "grocery-billing",
   "version": "0.1.0",
   "private": true,
+  "main": "public/electron.js",
+  "build": {
+    "appId": "com.grocery.billing",
+    "productName": "Grocery Billing App",
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    }
+  },
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -15,8 +24,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "electron": "electron .",
+    "dist": "electron-builder"
   },
   "eslintConfig": {
     "extends": [
@@ -35,5 +44,9 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "electron": "^38.4.0",
+    "electron-builder": "^26.0.12"
   }
 }
