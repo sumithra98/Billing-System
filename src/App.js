@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import "./App.css";
+import * as XLSX from "xlsx";
 
 // Product categories
 const categories = ["Fruits", "Dairy", "Snacks"];
@@ -52,6 +53,133 @@ function App() {
 
   const [billStatus, setBillStatus] = useState("");
 
+  const [searchQuery, setSearchQuery] = useState("");
+const [searchResults, setSearchResults] = useState([]);
+
+  const [billDates, setBillDates] = useState([]);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [billsForDate, setBillsForDate] = useState([]);
+  const [dailyTotal, setDailyTotal] = useState(0);
+  const [dailyProfit, setDailyProfit] = useState(0);
+  
+  const [showBillDates, setShowBillDates] = useState(false);
+
+  const [groupedBills, setGroupedBills] = useState({});
+  const [showBillList, setShowBillList] = useState(false);
+  const [expandedDates, setExpandedDates] = useState({});
+
+  const [calendarPage, setCalendarPage] = useState(1);
+  
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
+  const [calendarBills, setCalendarBills] = useState([]);
+
+
+  const handleShowAllBills = () => {
+  const savedBills = JSON.parse(localStorage.getItem("savedBills") || "[]");
+
+  
+
+  const grouped = {};
+  savedBills.forEach((bill) => {
+    const dateKey = new Date(bill.billDate).toISOString().split("T")[0];
+    if (!grouped[dateKey]) grouped[dateKey] = [];
+    grouped[dateKey].push(bill);
+  });
+
+  const sorted = Object.fromEntries(
+    Object.entries(grouped).sort(([a], [b]) => new Date(b) - new Date(a))
+  );
+
+  setGroupedBills(sorted);
+  setExpandedDates({});
+};
+
+const fetchGroupedBills = () => {
+  const savedBills = JSON.parse(localStorage.getItem("savedBills") || "[]");
+
+  const grouped = {};
+  savedBills.forEach((bill) => {
+    const dateKey = new Date(bill.billDate).toISOString().split("T")[0];
+    if (!grouped[dateKey]) grouped[dateKey] = [];
+    grouped[dateKey].push(bill);
+  });
+
+  const sorted = Object.fromEntries(
+    Object.entries(grouped).sort(([a], [b]) => new Date(b) - new Date(a))
+  );
+
+  setGroupedBills(sorted);
+  setExpandedDates({});
+};
+
+const handleCalendarDateChange = (e) => {
+  const date = e.target.value;
+  setSelectedCalendarDate(date);
+  setCalendarPage(1); // reset to first page
+
+  const savedBills = JSON.parse(localStorage.getItem("savedBills") || "[]");
+  const filtered = savedBills.filter((bill) =>
+    new Date(bill.billDate).toISOString().split("T")[0] === date
+  );
+
+  setCalendarBills(filtered);
+};
+
+const toggleDateExpand = (date) => {
+  setExpandedDates((prev) => ({
+    ...prev,
+    [date]: !prev[date],
+  }));
+};
+
+const handleDateClick = (date) => {
+  const savedBills = JSON.parse(localStorage.getItem("savedBills") || "[]");
+  const filtered = savedBills.filter((bill) =>
+    new Date(bill.billDate).toISOString().split("T")[0] === date
+  );
+
+  if (filtered.length === 0) {
+    alert("No bills found for this date.");
+    return;
+  }
+
+  const rows = [];
+
+  filtered.forEach((bill) => {
+    bill.items.forEach((item) => {
+      rows.push({
+        "Bill Number": bill.billNumber,
+        Date: bill.billDate,
+        "Customer ID": bill.custId,
+        "Customer Name": bill.custName,
+        Address: bill.custAddress,
+        Phone: bill.custPhone,
+        Product: item.productName,
+        MRP: item.mrp,
+        "Buying Price per item": item.buyprice,
+        "Selling Price per item": item.price,
+        "Profit Per Item": item.profit,
+        Quantity: item.quantity,
+        "Total Selling Price": item.total,
+        "Total Profit": item.totalProfit,
+        "Payment Mode": bill.paymentMode,
+        "Cash Given": bill.cashGiven,
+        "Bill Status": bill.billStatus,
+      });
+    });
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Bills");
+
+  XLSX.writeFile(workbook, `Bills_${date}.xlsx`);
+};
+
+const handleCollapseBills = () => {
+  setGroupedBills({});
+  setShowBillList(false);
+};
   // Load custom products from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("customProducts");
@@ -187,7 +315,7 @@ function App() {
   setIsBillingActive(false); // triggers auto-start
   setCashGiven("");
   setPaymentMode("Cash");
-  setBillStatus("Pending");
+  setBillStatus("");
 
   };
 
@@ -200,13 +328,124 @@ function App() {
   setCashGiven("");
   setPaymentMode("Cash");
   setIsBillingActive(false); // triggers auto-start
-  setBillStatus("Pending");
+  setBillStatus("");
 
 };
+
+const exportSingleBillToExcel = (bill) => {
+  const rows = bill.items.map((item) => ({
+    "Bill Number": bill.billNumber,
+    Date: bill.billDate,
+    "Customer ID": bill.custId,
+    "Customer Name": bill.custName,
+    Address: bill.custAddress,
+    Phone: bill.custPhone,
+    Product: item.productName,
+    MRP: item.mrp,
+    "Buying Price per item": item.buyprice, 
+    "Selling Price per item": item.price,
+    "Profit Per Item": item.profit,
+    Quantity: item.quantity,
+    "Total Selling Price": item.total,
+    "Total Profit": item.totalProfit,
+    "Payment Mode": bill.paymentMode,
+    "Cash Given": bill.cashGiven,
+    "Bill Status": bill.billStatus,
+  }));
+
+  const totalProfit = rows.reduce((sum, row) => sum + (row["Total Profit"] || 0), 0);
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+
+  // Add 3 blank rows and a summary row
+  const blankRows = [[""], [""], [""]];
+  const summaryRow = [["Total Profit", `$${totalProfit.toFixed(2)}`]];
+  XLSX.utils.sheet_add_aoa(worksheet, [...blankRows, ...summaryRow], {
+    origin: -1, // append after last row
+  });
+
+  // Auto-size columns
+  const columnWidths = Object.keys(rows[0]).map((key) => ({
+    wch: Math.max(
+      key.length,
+      ...rows.map((row) => (row[key] ? row[key].toString().length : 0))
+    ) + 2,
+  }));
+  worksheet["!cols"] = columnWidths;
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Bill");
+
+  XLSX.writeFile(workbook, `${bill.billNumber}_${bill.billStatus}.xlsx`);
+};
+
+
+const exportSelectedDateToExcel = () => {
+  if (!selectedDate || billsForDate.length === 0) {
+    alert("No bills to export for selected date.");
+    return;
+  }
+
+  const rows = [];
+
+  billsForDate.forEach((bill) => {
+    bill.items.forEach((item) => {
+      rows.push({
+        "Bill Number": bill.billNumber,
+        Date: bill.billDate,
+        "Customer ID": bill.custId,
+        "Customer Name": bill.custName,
+        Address: bill.custAddress,
+        Phone: bill.custPhone,
+        Product: item.productName,
+        MRP: item.mrp,
+        "Buying Price per item": item.buyprice,
+        "Selling Price per item": item.price,
+        "Profit Per Item": item.profit,
+        Quantity: item.quantity,
+        "Total Selling Price": item.total,
+        "Total Profit": item.totalProfit,
+        "Payment Mode": bill.paymentMode,
+        "Cash Given": bill.cashGiven,
+        "Bill Status": bill.billStatus,
+      });
+    });
+  });
+
+  const totalProfit = rows.reduce((sum, row) => sum + (row["Total Profit"] || 0), 0);
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+
+  // Add 3 blank rows and a summary row
+  const blankRows = [[""], [""], [""]];
+  const summaryRow = [["Total Profit", `$${totalProfit.toFixed(2)}`]];
+  XLSX.utils.sheet_add_aoa(worksheet, [...blankRows, ...summaryRow], {
+    origin: -1, // append after last row
+  });
+
+  // Auto-size columns
+  const columnWidths = Object.keys(rows[0]).map((key) => ({
+    wch: Math.max(
+      key.length,
+      ...rows.map((row) => (row[key] ? row[key].toString().length : 0))
+    ) + 2,
+  }));
+  worksheet["!cols"] = columnWidths;
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Bills");
+
+  XLSX.writeFile(workbook, `Bills_${selectedDate}.xlsx`);
+};
+
+
+
 
   return (
     <div className="App">
      <h1>🛒 Grocery Bill </h1>
+
+      
 
       <div className="split-layout">
         {/* Left Side: Billing Section */}
@@ -281,12 +520,12 @@ function App() {
                   <thead>
                     <tr>
                       <th>Product</th>
-                      <th>Qty</th>
-                      <th>Unit Price</th>
                       <th>MRP</th>
                       <th className="hide-print">Buying Price</th>
-                      <th className="hide-print">Profit</th>
+                      <th>Price per Item</th>
+                      <th>Qty</th>
                       <th>Total</th>
+                      <th className="hide-print">Profit per Item</th>
                       <th className="hide-print">Total Profit</th>
                       <th className="no-print">Action</th>
                     </tr>
@@ -295,12 +534,12 @@ function App() {
                     {items.map((item, index) => (
                       <tr key={index}>
                         <td>{item.productName}</td>
-                        <td>{item.quantity}</td>
-                        <td>${item.price.toFixed(2)}</td>
                         <td>${item.mrp.toFixed(2)}</td>
                         <td className="hide-print">${item.buyprice.toFixed(2)}</td>
-                        <td className="hide-print">${item.profit.toFixed(2)}</td>
+                        <td>${item.price.toFixed(2)}</td>
+                        <td>{item.quantity}</td>
                         <td>${item.total.toFixed(2)}</td>
+                        <td className="hide-print">${item.profit.toFixed(2)}</td>
                         <td className="hide-print">${item.totalProfit.toFixed(2)}</td>
                         <td className="no-print">
                           <button onClick={() => deleteItem(index)}>❌</button>
@@ -322,13 +561,81 @@ function App() {
               <div className="no-print" style={{ marginTop: "1rem" }}>
                 <button onClick={printBill}>🧾 Print Bill</button>
                 <button onClick={clearBill}>🧹 Clear Bill</button>
+                
               </div>
             </>
           )}
         </div>
 
+
         {/* Right Side: Product Gallery */}
         <div className="product-section">
+{/* 📆 Calendar Date Picker */}
+<div className="no-print" style={{ marginBottom: "1rem" }}>
+  <h3>📆 Pick a Specific Date</h3>
+  <input
+    type="date"
+    value={selectedCalendarDate}
+    onChange={handleCalendarDateChange}
+    style={{ padding: "5px", marginBottom: "10px" }}
+  />
+
+  {selectedCalendarDate && calendarBills.length > 0 && (
+  <>
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <thead>
+        <tr style={{ backgroundColor: "#f0f0f0" }}>
+          <th style={{ border: "1px solid #ccc", padding: "5px" }}>Bill #</th>
+          <th style={{ border: "1px solid #ccc", padding: "5px" }}>Customer</th>
+          <th style={{ border: "1px solid #ccc", padding: "5px" }}>Status</th>
+          <th style={{ border: "1px solid #ccc", padding: "5px" }}>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {calendarBills
+          .slice((calendarPage - 1) * 10, calendarPage * 10)
+          .map((bill, index) => (
+            <tr key={index}>
+              <td style={{ border: "1px solid #ccc", padding: "5px" }}>{bill.billNumber}</td>
+              <td style={{ border: "1px solid #ccc", padding: "5px" }}>{bill.custName || "-"}</td>
+              <td style={{ border: "1px solid #ccc", padding: "5px" }}>{bill.billStatus}</td>
+              <td style={{ border: "1px solid #ccc", padding: "5px" }}>
+                <button onClick={() => exportSingleBillToExcel(bill)}>📤 Export</button>
+              </td>
+            </tr>
+          ))}
+      </tbody>
+    </table>
+
+    {/* Pagination Controls */}
+    <div style={{ marginTop: "10px", textAlign: "center" }}>
+      <button
+        onClick={() => setCalendarPage((prev) => Math.max(prev - 1, 1))}
+        disabled={calendarPage === 1}
+        style={{ marginRight: "10px" }}
+      >
+        ◀️ Previous
+      </button>
+      <span>Page {calendarPage} of {Math.ceil(calendarBills.length / 10)}</span>
+      <button
+        onClick={() =>
+          setCalendarPage((prev) =>
+            prev < Math.ceil(calendarBills.length / 10) ? prev + 1 : prev
+          )
+        }
+        disabled={calendarPage >= Math.ceil(calendarBills.length / 10)}
+        style={{ marginLeft: "10px" }}
+      >
+        Next ▶️
+      </button>
+    </div>
+  </>
+)}
+
+  {selectedCalendarDate && calendarBills.length === 0 && (
+    <p>No bills found for {selectedCalendarDate}</p>
+  )}
+</div>
           <h3>Categories</h3>
           <div className="category-buttons">
             {categories.map((cat) => (
@@ -365,6 +672,57 @@ function App() {
           )}
         </div>
       </div>
+      {/* 📁 All Bills Viewer */}
+{billDates.length > 0 && (
+  <div className="no-print" style={{ marginTop: "2rem" }}>
+    <h3>📅 Select a Date to View Bills</h3>
+    {billDates.map((date) => (
+      <button key={date} onClick={() => handleDateClick(date)} style={{ margin: "5px" }}>
+        {date}
+      </button>
+    ))}
+  </div>
+)}
+
+{selectedDate && billsForDate.length > 0 && (
+  <div style={{ marginTop: "1rem" }}>
+    <h3>🧾 Bills for {selectedDate}</h3>
+    <p><strong>Total Sales:</strong> ${dailyTotal.toFixed(2)}</p>
+    <p><strong>Total Profit:</strong> ${dailyProfit.toFixed(2)}</p>
+    <button onClick={exportSelectedDateToExcel}>📤 Export to Excel</button>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Bill #</th>
+          <th>Customer</th>
+          <th>Phone</th>
+          <th>Product</th>
+          <th>Qty</th>
+          <th>Price</th>
+          <th>Total</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {billsForDate.map((bill, i) =>
+          bill.items.map((item, j) => (
+            <tr key={`${i}-${j}`}>
+              <td>{bill.billNumber}</td>
+              <td>{bill.custName}</td>
+              <td>{bill.custPhone}</td>
+              <td>{item.productName}</td>
+              <td>{item.quantity}</td>
+              <td>${item.price.toFixed(2)}</td>
+              <td>${item.total.toFixed(2)}</td>
+              <td>{bill.billStatus}</td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  </div>
+)}
     </div>
   );
 }
