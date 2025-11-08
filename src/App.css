@@ -52,6 +52,19 @@
   cursor: pointer;
 }
 
+.scrollable-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid #ccc;
+  background-color: #f9f9f9;
+  border-radius: 6px;
+  scroll-behavior: smooth;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

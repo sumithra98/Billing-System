@@ -53,8 +53,7 @@ function App() {
 
   const [billStatus, setBillStatus] = useState("");
 
-  const [searchQuery, setSearchQuery] = useState("");
-const [searchResults, setSearchResults] = useState([]);
+
 
   const [billDates, setBillDates] = useState([]);
   const [selectedDate, setSelectedDate] = useState("");
@@ -62,8 +61,6 @@ const [searchResults, setSearchResults] = useState([]);
   const [dailyTotal, setDailyTotal] = useState(0);
   const [dailyProfit, setDailyProfit] = useState(0);
   
-  const [showBillDates, setShowBillDates] = useState(false);
-
   const [groupedBills, setGroupedBills] = useState({});
   const [showBillList, setShowBillList] = useState(false);
   const [expandedDates, setExpandedDates] = useState({});
@@ -73,43 +70,47 @@ const [searchResults, setSearchResults] = useState([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
   const [calendarBills, setCalendarBills] = useState([]);
 
+const [summaryDate, setSummaryDate] = useState("");
+const [summaryData, setSummaryData] = useState(null);
 
-  const handleShowAllBills = () => {
+
+const [showCalendarSection, setShowCalendarSection] = useState(true);
+const [showSummarySection, setShowSummarySection] = useState(true);
+
+const [gstRate, setGstRate] = useState(5);
+
+const [globalProducts, setGlobalProducts] = useState(() => {
+  const saved = localStorage.getItem("globalProducts");
+  return saved ? JSON.parse(saved) : [];
+});
+
+const handleSummaryDateChange = (e) => {
+  const date = e.target.value;
+  setSummaryDate(date);
+
   const savedBills = JSON.parse(localStorage.getItem("savedBills") || "[]");
-
-  
-
-  const grouped = {};
-  savedBills.forEach((bill) => {
-    const dateKey = new Date(bill.billDate).toISOString().split("T")[0];
-    if (!grouped[dateKey]) grouped[dateKey] = [];
-    grouped[dateKey].push(bill);
-  });
-
-  const sorted = Object.fromEntries(
-    Object.entries(grouped).sort(([a], [b]) => new Date(b) - new Date(a))
+  const filtered = savedBills.filter(
+    (bill) => new Date(bill.billDate).toISOString().split("T")[0] === date
   );
 
-  setGroupedBills(sorted);
-  setExpandedDates({});
-};
+  let totalSelling = 0;
+  let totalBuying = 0;
+  let totalProfit = 0;
 
-const fetchGroupedBills = () => {
-  const savedBills = JSON.parse(localStorage.getItem("savedBills") || "[]");
-
-  const grouped = {};
-  savedBills.forEach((bill) => {
-    const dateKey = new Date(bill.billDate).toISOString().split("T")[0];
-    if (!grouped[dateKey]) grouped[dateKey] = [];
-    grouped[dateKey].push(bill);
+  filtered.forEach((bill) => {
+    bill.items.forEach((item) => {
+      totalSelling += item.total;
+      totalBuying += item.buyprice * item.quantity;
+      totalProfit += item.totalProfit;
+    });
   });
 
-  const sorted = Object.fromEntries(
-    Object.entries(grouped).sort(([a], [b]) => new Date(b) - new Date(a))
-  );
-
-  setGroupedBills(sorted);
-  setExpandedDates({});
+  setSummaryData({
+    totalSelling,
+    totalBuying,
+    totalProfit,
+    billCount: filtered.length,
+  });
 };
 
 const handleCalendarDateChange = (e) => {
@@ -218,6 +219,9 @@ const handleCollapseBills = () => {
       const profit = price - buyprice;
       const total = quantity * price;
       const totalProfit = profit * quantity;
+      const gstAmount = (total * gstRate) / 100;
+      const mrpWithQuantity = mrp * quantity;
+
       setItems([
         ...items,
         {
@@ -229,6 +233,9 @@ const handleCollapseBills = () => {
           profit,
           total,
           totalProfit,
+          gstRate,
+          gstAmount,
+          mrpWithQuantity,
         },
       ]);
       setProductName("");
@@ -236,6 +243,7 @@ const handleCollapseBills = () => {
       setPrice("");
       setMrp("");
       setBuyprice("");
+      setGstRate(5);
     } else {
       alert("Please enter valid product, quantity, price, and MRP.");
     }
@@ -272,8 +280,50 @@ const handleCollapseBills = () => {
     setItems(items.filter((_, i) => i !== index));
   };
 
+  const handleAddGlobalProduct = () => {
+  if (!productName || price <= 0 || mrp <= 0) {
+    alert("Enter valid product name, price, and MRP.");
+    return;
+  }
+
+  const updated = [...globalProducts, { name: productName, price: Number(price), mrp: Number(mrp) }];
+  setGlobalProducts(updated);
+  localStorage.setItem("globalProducts", JSON.stringify(updated));
+  setProductName("");
+  setPrice("");
+  setMrp("");
+};
+
+const handleEditProduct = (index) => {
+  const updated = [...globalProducts];
+  const newPrice = prompt("Enter new price:", updated[index].price);
+  const newMrp = prompt("Enter new MRP:", updated[index].mrp);
+
+  if (newPrice && newMrp) {
+    updated[index].price = Number(newPrice);
+    updated[index].mrp = Number(newMrp);
+    setGlobalProducts(updated);
+    localStorage.setItem("globalProducts", JSON.stringify(updated));
+  }
+};
+
   // Calculate grand total
   const grandTotal = items.reduce((sum, item) => sum + item.total, 0);
+
+  const totalItems = items.length;
+  const totalQuantity = Math.round(items.reduce((sum, item) => sum + item.quantity, 0));
+
+  const totalTax5 = items
+  .filter((item) => item.gstRate === 5)
+  .reduce((sum, item) => sum + item.gstAmount, 0);
+
+  const totalTax18 = items
+  .filter((item) => item.gstRate === 18)
+  .reduce((sum, item) => sum + item.gstAmount, 0);
+
+  const totalMrpwithQuantity = items.reduce((sum, item) => sum + item.mrpWithQuantity, 0);
+
+  const savings = totalMrpwithQuantity - grandTotal;
 
   // Generate bill number and timestamp
   // const billNumber = `BILL-${Date.now()}`;
@@ -439,6 +489,63 @@ const exportSelectedDateToExcel = () => {
 };
 
 
+const exportSummaryForDateToExcel = (date) => {
+  const savedBills = JSON.parse(localStorage.getItem("savedBills") || "[]");
+  const filtered = savedBills.filter(
+    (bill) => new Date(bill.billDate).toISOString().split("T")[0] === date
+  );
+
+  if (filtered.length === 0) {
+    alert("No bills found for this date.");
+    return;
+  }
+
+  const summaryRows = [];
+  let totalSelling = 0;
+  let totalBuying = 0;
+  let totalProfit = 0;
+
+  filtered.forEach((bill) => {
+    const billSelling = bill.items.reduce((sum, item) => sum + item.total, 0);
+    const billBuying = bill.items.reduce((sum, item) => sum + item.buyprice * item.quantity, 0);
+    const billProfit = bill.items.reduce((sum, item) => sum + item.totalProfit, 0);
+
+    summaryRows.push({
+      "Bill Number": bill.billNumber,
+      "Total Selling Price": `$${billSelling.toFixed(2)}`,
+      "Total Profit": `$${billProfit.toFixed(2)}`
+    });
+
+    totalSelling += billSelling;
+    totalBuying += billBuying;
+    totalProfit += billProfit;
+  });
+
+  // Add 3 blank rows and a summary row
+  summaryRows.push({});
+  summaryRows.push({});
+  summaryRows.push({
+    "Bill Number": "📊 Date Summary",
+    "Total Selling Price": `$${totalSelling.toFixed(2)}`,
+    "Total Profit": `$${totalProfit.toFixed(2)}`
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(summaryRows);
+
+  // Auto-size columns
+  const columnWidths = Object.keys(summaryRows[0]).map((key) => ({
+    wch: Math.max(
+      key.length,
+      ...summaryRows.map((row) => (row[key] ? row[key].toString().length : 0))
+    ) + 2,
+  }));
+  worksheet["!cols"] = columnWidths;
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Summary");
+
+  XLSX.writeFile(workbook, `Bill_Summary_${date}.xlsx`);
+};
 
 
   return (
@@ -465,6 +572,10 @@ const exportSelectedDateToExcel = () => {
             <input type="number" placeholder="Price" value={price} onChange={(e) => setPrice(e.target.value)} />
             <input type="number" placeholder="MRP" value={mrp} onChange={(e) => setMrp(e.target.value)} />
             <input type="number" placeholder="Buying Price" value={buyprice} onChange={(e) => setBuyprice(e.target.value)} />
+            <select value={gstRate} onChange={(e) => setGstRate(Number(e.target.value))}>
+              <option value={5}>5% GST</option>
+              <option value={18}>18% GST</option>
+            </select>
             <button onClick={addItem}>Add Item</button>
             <button onClick={addCustomProduct}>Add to Custom List</button>
           </div>
@@ -493,16 +604,7 @@ const exportSelectedDateToExcel = () => {
           />
         </div>
 
-        <div className="input-section">
-          <label>
-            Bill Status:
-            <select value={billStatus} onChange={(e) => setBillStatus(e.target.value)}>
-              <option value="">-- Select Bill Status --</option>
-              <option value="Paid">Paid</option>
-              <option value="Pending">Pending</option>
-            </select>
-          </label>
-        </div>
+        
 
           {/* Bill Table */}
           {items.length > 0 && (
@@ -525,6 +627,8 @@ const exportSelectedDateToExcel = () => {
                       <th>Price per Item</th>
                       <th>Qty</th>
                       <th>Total</th>
+                      <th>GST %</th>
+                      <th>Tax Amount</th>
                       <th className="hide-print">Profit per Item</th>
                       <th className="hide-print">Total Profit</th>
                       <th className="no-print">Action</th>
@@ -539,6 +643,8 @@ const exportSelectedDateToExcel = () => {
                         <td>${item.price.toFixed(2)}</td>
                         <td>{item.quantity}</td>
                         <td>${item.total.toFixed(2)}</td>
+                        <td>{item.gstRate}%</td>
+                        <td>${item.gstAmount.toFixed(2)}</td>
                         <td className="hide-print">${item.profit.toFixed(2)}</td>
                         <td className="hide-print">${item.totalProfit.toFixed(2)}</td>
                         <td className="no-print">
@@ -549,6 +655,14 @@ const exportSelectedDateToExcel = () => {
                   </tbody>
                 </table>
                 <h2>Grand Total: ${grandTotal.toFixed(2)}</h2>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginTop: "1rem" }}>
+
+                <p><strong>Total Items:</strong> {totalItems}</p>
+                <p><strong>Total Quantity:</strong> {totalQuantity}</p>
+                <p><strong>5% GST Total:</strong> ${totalTax5.toFixed(2)}</p>
+                <p><strong>18% GST Total:</strong> ${totalTax18.toFixed(2)}</p>
+                <p><strong>Savings :</strong>${savings.toFixed(2)}</p>
+                </div>
                 <p><strong>Payment Mode:</strong> {paymentMode}</p>
                 {paymentMode === "Cash" && (
                   <p><strong>Cash Given:</strong> ${Number(cashGiven).toFixed(2)}</p>
@@ -556,7 +670,21 @@ const exportSelectedDateToExcel = () => {
                 {paymentMode === "Cash" && cashGiven > 0 && (
                   <p><strong>Balance Returned:</strong> ${(cashGiven - grandTotal).toFixed(2)}</p>
                 )}
+
+                <div className="input-section">
+                <label>
+                  Bill Status:
+                  <select value={billStatus} onChange={(e) => setBillStatus(e.target.value)}>
+                    <option value="">-- Select Bill Status --</option>
+                    <option value="Paid">Paid</option>
+                    <option value="Pending">Pending</option>
+                  </select>
+                </label>
+              </div>
                 <p><strong>Bill Status:</strong> {billStatus}</p>
+                
+
+              
               </div>
               <div className="no-print" style={{ marginTop: "1rem" }}>
                 <button onClick={printBill}>🧾 Print Bill</button>
@@ -570,17 +698,65 @@ const exportSelectedDateToExcel = () => {
 
         {/* Right Side: Product Gallery */}
         <div className="product-section">
+
+          <h3>🛠️ Manage Global Products</h3>
+          <div className="input-section">
+            <input type="text" placeholder="Product Name" value={productName} onChange={(e) => setProductName(e.target.value)} />
+            <input type="number" placeholder="Price" value={price} onChange={(e) => setPrice(e.target.value)} />
+            <input type="number" placeholder="MRP" value={mrp} onChange={(e) => setMrp(e.target.value)} />
+            <button onClick={handleAddGlobalProduct}>➕ Add Product</button>
+          </div>
+
+          {/* Custom Products */}
+            {customProducts.length > 0 && (
+              <>
+                <h3>🆕 Custom Products</h3>
+                <div className="scrollable-gallery">
+                  {customProducts.map((p, i) => (
+                    <div key={i} className="product-card">
+                      <img src="https://via.placeholder.com/80?text=Custom" alt={p.name} />
+                      <p>{p.name}</p>
+                      <button className="no-print" onClick={() => deleteCustomProduct(i)}>❌</button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* 🛠️ Global Product List */}
+            {globalProducts.length > 0 && (
+              <>
+                <h3>🛠️ Global Product Master</h3>
+                <div className="scrollable-gallery">
+                  {globalProducts.map((product, index) => (
+                    <div key={index} className="product-card">
+                      <p><strong>{product.name}</strong></p>
+                      <p>Price: ${product.price}</p>
+                      <p>MRP: ${product.mrp}</p>
+                      <button className="no-print" onClick={() => handleEditProduct(index)}>✏️ Edit</button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
 {/* 📆 Calendar Date Picker */}
 <div className="no-print" style={{ marginBottom: "1rem" }}>
-  <h3>📆 Pick a Specific Date</h3>
+  <h3>📆 Pick a Specific Date to view bills</h3>
   <input
     type="date"
     value={selectedCalendarDate}
     onChange={handleCalendarDateChange}
     style={{ padding: "5px", marginBottom: "10px" }}
   />
+<br></br>
+<div className="no-print" style={{ marginBottom: "1rem" }}>
+  <button onClick={() => setShowCalendarSection((prev) => !prev)}>
+    {showCalendarSection ? "🙈 Hide Bills" : "📆 Show Bills"}
+  </button>
+</div>
 
-  {selectedCalendarDate && calendarBills.length > 0 && (
+  {showCalendarSection && selectedCalendarDate && calendarBills.length > 0 && (
   <>
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead>
@@ -636,6 +812,44 @@ const exportSelectedDateToExcel = () => {
     <p>No bills found for {selectedCalendarDate}</p>
   )}
 </div>
+
+{/* 📅 Summary Calendar */}
+
+<div className="no-print" style={{ marginTop: "2rem", padding: "10px", borderTop: "1px solid #ccc" }}>
+  <h3>📅 Select Date for viewing Summary</h3>
+  <input
+    type="date"
+    value={summaryDate}
+    onChange={handleSummaryDateChange}
+    style={{ padding: "5px", marginBottom: "10px" }}
+  />
+  <br></br>
+<div className="no-print" style={{ marginBottom: "1rem" }}>
+  <button onClick={() => setShowSummarySection((prev) => !prev)}>
+    {showSummarySection ? "🙈 Hide Summary Panel" : "📊 Show Summary Panel"}
+  </button>
+</div>
+  {showSummarySection && summaryData && summaryDate && (
+  <div style={{ background: "#f9f9f9", padding: "10px", border: "1px solid #ccc", marginTop: "1rem" }}>
+    <h4>📊 Summary for {summaryDate}</h4>
+    <p><strong>Number of Bills:</strong> {summaryData.billCount}</p>
+    <p><strong>Total Selling Price:</strong> ${summaryData.totalSelling.toFixed(2)}</p>
+    <p><strong>Total Profit:</strong> ${summaryData.totalProfit.toFixed(2)}</p>
+    <button onClick={() => exportSummaryForDateToExcel(summaryDate)} style={{ marginTop: "10px" }}>
+      📤 Export Summary to Excel
+    </button>
+  </div>
+)}
+</div>
+
+{summaryData && summaryDate && (
+  <button
+    onClick={() => exportSummaryForDateToExcel(summaryDate)}
+    style={{ marginTop: "10px" }}
+  >
+    📤 Export Summary to Excel
+  </button>
+)}
           <h3>Categories</h3>
           <div className="category-buttons">
             {categories.map((cat) => (
