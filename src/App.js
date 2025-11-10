@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "./App.css";
 import * as XLSX from "xlsx";
 
@@ -77,7 +77,24 @@ const [summaryData, setSummaryData] = useState(null);
 const [showCalendarSection, setShowCalendarSection] = useState(true);
 const [showSummarySection, setShowSummarySection] = useState(true);
 
-const [gstRate, setGstRate] = useState(5);
+const [gstRate, setGstRate] = useState();
+
+const [showSuggestions, setShowSuggestions] = useState(false);
+
+const [editGlobalIndex, setEditGlobalIndex] = useState(null);
+const globalInputRef = useRef(null);
+const [highlightedIndex, setHighlightedIndex] = useState(-1);
+
+// Left panel (billing)
+const [billingProductName, setBillingProductName] = useState("");
+const [showBillingSuggestions, setShowBillingSuggestions] = useState(false);
+
+// Right panel (global product form)
+const [globalProductName, setGlobalProductName] = useState("");
+const [showGlobalSuggestions, setShowGlobalSuggestions] = useState(false);
+const[globalPrice,setGlobalPrice] = useState("");
+const[globalMrp,setGlobalMrp] = useState("");
+const[globalBuyingPrice,setGlobalBuyingPrice] = useState("");
 
 const [globalProducts, setGlobalProducts] = useState(() => {
   const saved = localStorage.getItem("globalProducts");
@@ -177,6 +194,45 @@ const handleDateClick = (date) => {
   XLSX.writeFile(workbook, `Bills_${date}.xlsx`);
 };
 
+const handleUpdateGlobalProduct = () => {
+  if (
+    editGlobalIndex === null ||
+    !globalProductName ||
+    globalPrice <= 0 ||
+    globalMrp <= 0 ||
+    globalBuyingPrice <= 0
+  ) {
+    alert("Enter valid product name, price, buying price and MRP.");
+    return;
+  }
+
+  const updated = [...globalProducts];
+  updated[editGlobalIndex] = {
+    name: globalProductName,
+    price: Number(globalPrice),
+    mrp: Number(globalMrp),
+    buyprice: Number(globalBuyingPrice),
+  };
+
+  setGlobalProducts(updated);
+  localStorage.setItem("globalProducts", JSON.stringify(updated));
+
+  // Clear form
+  setGlobalProductName("");
+  setGlobalPrice("");
+  setGlobalMrp("");
+  setGlobalBuyingPrice("");
+  setEditGlobalIndex(null);
+};
+
+const handleClearGlobalProduct = () => {
+  setGlobalProductName("");
+  setGlobalPrice("");
+  setGlobalMrp("");
+  setGlobalBuyingPrice("");
+  setEditGlobalIndex(null);
+};
+
 const handleCollapseBills = () => {
   setGroupedBills({});
   setShowBillList(false);
@@ -212,6 +268,23 @@ const handleCollapseBills = () => {
   useEffect(() => {
   localStorage.setItem("billCounter", billCounter);
 }, [billCounter]);
+
+
+useEffect(() => {
+  const handleClickOutside = (event) => {
+    if (
+      globalInputRef.current &&
+      !globalInputRef.current.contains(event.target)
+    ) {
+      setShowGlobalSuggestions(false);
+    }
+  };
+
+  document.addEventListener("mousedown", handleClickOutside);
+  return () => {
+    document.removeEventListener("mousedown", handleClickOutside);
+  };
+}, []);
 
   // Add item to bill
   const addItem = () => {
@@ -281,30 +354,45 @@ const handleCollapseBills = () => {
   };
 
   const handleAddGlobalProduct = () => {
-  if (!productName || price <= 0 || mrp <= 0) {
-    alert("Enter valid product name, price, and MRP.");
+  if (!globalProductName  || globalPrice  <= 0 || globalMrp  <= 0 || globalBuyingPrice <=0) {
+    alert("Enter valid product name, price, buying price and MRP.");
     return;
   }
 
-  const updated = [...globalProducts, { name: productName, price: Number(price), mrp: Number(mrp) }];
+  const alreadyExists = globalProducts.some(
+    (p) => p.name.toLowerCase() === globalProductName.toLowerCase()
+  );
+
+  if (alreadyExists) {
+    alert(`❗ Product "${globalProductName}" is already included in Global Product Master.`);
+    return;
+  }
+
+  const updated = [...globalProducts, { name: globalProductName, price: Number(globalPrice ), mrp: Number(globalMrp ), buyprice : Number(globalBuyingPrice)}];
   setGlobalProducts(updated);
   localStorage.setItem("globalProducts", JSON.stringify(updated));
-  setProductName("");
-  setPrice("");
-  setMrp("");
+  setGlobalProductName("");
+  setGlobalPrice("");
+  setGlobalMrp("");
+  setGlobalBuyingPrice("");
 };
 
 const handleEditProduct = (index) => {
-  const updated = [...globalProducts];
-  const newPrice = prompt("Enter new price:", updated[index].price);
-  const newMrp = prompt("Enter new MRP:", updated[index].mrp);
+  const product = globalProducts[index];
+  setGlobalProductName(product.name);
+  setGlobalPrice(product.price.toString());
+  setGlobalMrp(product.mrp.toString());
+  setGlobalBuyingPrice(product.buyprice.toString());
+  setEditGlobalIndex(index);
+};
 
-  if (newPrice && newMrp) {
-    updated[index].price = Number(newPrice);
-    updated[index].mrp = Number(newMrp);
-    setGlobalProducts(updated);
-    localStorage.setItem("globalProducts", JSON.stringify(updated));
-  }
+const handleDeleteProduct = (index) => {
+  const confirmDelete = window.confirm("Are you sure you want to delete this product?");
+  if (!confirmDelete) return;
+
+  const updated = globalProducts.filter((_, i) => i !== index);
+  setGlobalProducts(updated);
+  localStorage.setItem("globalProducts", JSON.stringify(updated));
 };
 
   // Calculate grand total
@@ -559,50 +647,234 @@ const exportSummaryForDateToExcel = (date) => {
         <div className="billing-section">
           {/* Customer Info */}
           <div className="input-section">
-            <input type="text" placeholder="Customer ID" value={custId} onChange={(e) => setCustId(e.target.value)} />
-            <input type="text" placeholder="Customer Name" value={custName} onChange={(e) => setCustName(e.target.value)} />
-            <input type="text" placeholder="Address" value={custAddress} onChange={(e) => setCustAddress(e.target.value)} />
-            <input type="text" placeholder="Phone Number" value={custPhone} onChange={(e) => setCustPhone(e.target.value)} />
+            <div className="input-section" style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>Customer ID</label>
+              <input
+                type="text"
+                value={custId}
+                onChange={(e) => setCustId(e.target.value)}
+                style={{
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    width: "100%",
+                    fontSize: "14px",
+                    boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                  }}
+              />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>Customer Name</label>
+              <input
+                type="text"
+                value={custName}
+                onChange={(e) => setCustName(e.target.value)}
+               style={{
+                  padding: "8px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  width: "100%",
+                  fontSize: "14px",
+                  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>Address</label>
+              <input
+                type="text"
+                value={custAddress}
+                onChange={(e) => setCustAddress(e.target.value)}
+                style={{
+                  padding: "8px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  width: "100%",
+                  fontSize: "14px",
+                  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>Phone Number</label>
+              <input
+                type="text"
+                value={custPhone}
+                onChange={(e) => setCustPhone(e.target.value)}
+                style={{
+                  padding: "8px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  width: "100%",
+                  fontSize: "14px",
+                  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                }}
+              />
+            </div>
           </div>
+        </div>
 
           {/* Product Entry */}
           <div className="input-section">
-            <input type="text" placeholder="Product Name" value={productName} onChange={(e) => setProductName(e.target.value)} />
-            <input type="number" placeholder="Quantity" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            <input type="number" placeholder="Price" value={price} onChange={(e) => setPrice(e.target.value)} />
-            <input type="number" placeholder="MRP" value={mrp} onChange={(e) => setMrp(e.target.value)} />
-            <input type="number" placeholder="Buying Price" value={buyprice} onChange={(e) => setBuyprice(e.target.value)} />
-            <select value={gstRate} onChange={(e) => setGstRate(Number(e.target.value))}>
-              <option value={5}>5% GST</option>
-              <option value={18}>18% GST</option>
-            </select>
-            <button onClick={addItem}>Add Item</button>
-            <button onClick={addCustomProduct}>Add to Custom List</button>
+             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>Item Name</label>
+              <input
+                type="text"
+                value={productName}
+                onChange={(e) => { setProductName(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                style={{
+                padding: "8px",
+                border: "1px solid #ccc",
+                borderRadius: "4px",
+                width: "100%",
+                fontSize: "14px",
+                boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+              }}
+              />
+
+              {productName && showSuggestions &&(
+                <ul
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    background: "#fff",
+                    border: "1px solid #ccc",
+                    maxHeight: "150px",
+                    overflowY: "auto",
+                    zIndex: 10,
+                    margin: 0,
+                    padding: "5px",
+                    listStyle: "none",
+                  }}
+                >
+                  {globalProducts
+                    .filter((p) =>
+                      p.name.toLowerCase().startsWith(globalProductName.toLowerCase())
+                    )
+                    .map((p, i) => (
+                      <li
+                        key={i}
+                        style={{
+                          padding: "5px",
+                          cursor: "pointer",
+                          borderBottom: "1px solid #eee",
+                        }}
+                        onClick={() => {
+                          setProductName(p.name);
+                          setPrice(p.price);
+                          setMrp(p.mrp);
+                          setShowSuggestions(false);
+                        }}
+                      >
+                        {p.name} — ${p.price} / MRP ${p.mrp}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>Quantity</label>
+
+            <input type="number" value={quantity} 
+            onChange={(e) => setQuantity(e.target.value)} 
+            style={{
+              padding: "8px",
+              border: "1px solid #ccc",
+              borderRadius: "4px",
+              width: "100%",
+              fontSize: "14px",
+              boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+            }}
+            />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>Rate</label>
+              <input type="number" value={price} 
+              onChange={(e) => setPrice(e.target.value)} 
+              style={{
+              padding: "8px",
+              border: "1px solid #ccc",
+              borderRadius: "4px",
+              width: "100%",
+              fontSize: "14px",
+              boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+            }}
+              />
+            </div>
+             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>MRP</label>
+              <input type="number" value={mrp} 
+              onChange={(e) => setMrp(e.target.value)} 
+              style={{
+              padding: "8px",
+              border: "1px solid #ccc",
+              borderRadius: "4px",
+              width: "100%",
+              fontSize: "14px",
+              boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+            }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>Buying Price</label>
+              <input type="number" value={buyprice} 
+              onChange={(e) => setBuyprice(e.target.value)} 
+              style={{
+              padding: "8px",
+              border: "1px solid #ccc",
+              borderRadius: "4px",
+              width: "100%",
+              fontSize: "14px",
+              boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+            }}
+              />
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <label style={{ minWidth: "100px", fontWeight: "bold" }}>GST %</label>
+              <select value={gstRate} 
+              onChange={(e) => setGstRate(Number(e.target.value))} 
+              style={{
+              padding: "8px",
+              border: "1px solid #ccc",
+              borderRadius: "4px",
+              width: "100%",
+              fontSize: "14px",
+              boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+            }}
+              >
+                <option>Select GST</option>
+                <option value={5}>5% GST</option>
+                <option value={18}>18% GST</option>
+              </select>
+            </div>
+            <button onClick={addItem}
+            style={{
+              backgroundColor: "#28a745",      
+              color: "white",
+              padding: "8px 16px",
+              border: "none",
+              borderRadius: "4px",
+              fontWeight: "bold",
+              cursor: "pointer",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+              transition: "background-color 0.3s ease",
+            }}
+            onMouseOver={(e) => (e.target.style.backgroundColor = "#218838")}
+            onMouseOut={(e) => (e.target.style.backgroundColor = "#28a745")}
+
+            >Add Item</button>
           </div>
 
-        <div className="input-section">
-          <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
-            <option value="Cash">Cash</option>
-            <option value="Card">Card</option>
-            <option value="UPI">UPI</option>
-          </select>
-
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="Cash Given"
-            value={cashGiven}
-            onChange={(e) => {
-              const value = e.target.value;
-              // Allow only valid decimal numbers
-              if (/^\d*\.?\d*$/.test(value)) {
-                setCashGiven(value);
-              }
-            }}
-            disabled={paymentMode !== "Cash"}
-          />
-        </div>
+        
 
         
 
@@ -663,6 +935,31 @@ const exportSummaryForDateToExcel = (date) => {
                 <p><strong>18% GST Total:</strong> ${totalTax18.toFixed(2)}</p>
                 <p><strong>Savings :</strong>${savings.toFixed(2)}</p>
                 </div>
+
+                <div className="input-section">
+          <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
+            <option value="Cash">Cash</option>
+            <option value="Card">Card</option>
+            <option value="UPI">UPI</option>
+          </select>
+
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="Cash Given"
+            value={cashGiven}
+            onChange={(e) => {
+              const value = e.target.value;
+              // Allow only valid decimal numbers
+              if (/^\d*\.?\d*$/.test(value)) {
+                setCashGiven(value);
+              }
+            }}
+            disabled={paymentMode !== "Cash"}
+          />
+        </div>
+
                 <p><strong>Payment Mode:</strong> {paymentMode}</p>
                 {paymentMode === "Cash" && (
                   <p><strong>Cash Given:</strong> ${Number(cashGiven).toFixed(2)}</p>
@@ -672,19 +969,17 @@ const exportSummaryForDateToExcel = (date) => {
                 )}
 
                 <div className="input-section">
-                <label>
-                  Bill Status:
-                  <select value={billStatus} onChange={(e) => setBillStatus(e.target.value)}>
-                    <option value="">-- Select Bill Status --</option>
-                    <option value="Paid">Paid</option>
-                    <option value="Pending">Pending</option>
-                  </select>
-                </label>
-              </div>
+                  <label>
+                    Bill Status:
+                    <select value={billStatus} onChange={(e) => setBillStatus(e.target.value)}>
+                      <option value="">-- Select Bill Status --</option>
+                      <option value="Paid">Paid</option>
+                      <option value="Pending">Pending</option>
+                    </select>
+                  </label>
+                </div>
                 <p><strong>Bill Status:</strong> {billStatus}</p>
                 
-
-              
               </div>
               <div className="no-print" style={{ marginTop: "1rem" }}>
                 <button onClick={printBill}>🧾 Print Bill</button>
@@ -698,14 +993,195 @@ const exportSummaryForDateToExcel = (date) => {
 
         {/* Right Side: Product Gallery */}
         <div className="product-section">
+          <div className="no-print" style={{ marginBottom: "1rem", padding: "10px", border: "1px solid #ccc", borderRadius: "6px" }}>
+          <h3>🛠️ Add New Items</h3>
+          <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap", alignItems: "flex-start", marginBottom: "1rem" }}>            <div style={{ flex: "1 1 150px" }}>
+              <label style={{ display: "block", fontWeight: "bold", marginBottom: "4px" }}>Item Name</label>
+              <div ref={globalInputRef} style={{ position: "relative" }}>
+              <input
+                type="text"
+                value={globalProductName}
+                onChange={(e) => {setGlobalProductName(e.target.value);
+                  setShowGlobalSuggestions(true);
+                  setHighlightedIndex(-1);
+                  }}
+                  onKeyDown={(e) => {
+                    const filtered = globalProducts.filter((p) =>
+                      p.name.toLowerCase().startsWith(globalProductName.toLowerCase())
+                    );
 
-          <h3>🛠️ Manage Global Products</h3>
-          <div className="input-section">
-            <input type="text" placeholder="Product Name" value={productName} onChange={(e) => setProductName(e.target.value)} />
-            <input type="number" placeholder="Price" value={price} onChange={(e) => setPrice(e.target.value)} />
-            <input type="number" placeholder="MRP" value={mrp} onChange={(e) => setMrp(e.target.value)} />
-            <button onClick={handleAddGlobalProduct}>➕ Add Product</button>
+                    if (e.key === "ArrowDown") {
+                      setHighlightedIndex((prev) =>
+                        prev < filtered.length - 1 ? prev + 1 : 0
+                      );
+                    } else if (e.key === "ArrowUp") {
+                      setHighlightedIndex((prev) =>
+                        prev > 0 ? prev - 1 : filtered.length - 1
+                      );
+                    } else if (e.key === "Enter" && highlightedIndex >= 0) {
+                      const selected = filtered[highlightedIndex];
+                      setGlobalProductName(selected.name);
+                      setGlobalPrice(selected.price);
+                      setGlobalMrp(selected.mrp);
+                      setShowGlobalSuggestions(false);
+                      setHighlightedIndex(-1);
+                    }
+                  }}
+                style={{
+                  padding: "8px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  width: "100%",
+                  fontSize: "14px",
+                  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                }}
+              />
+
+              {globalProductName && showGlobalSuggestions && globalProducts.some((p) =>
+                p.name.toLowerCase().startsWith(globalProductName.toLowerCase())
+                ) &&(
+                <ul
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    background: "#fff",
+                    border: "1px solid #ccc",
+                    maxHeight: "150px",
+                    overflowY: "auto",
+                    zIndex: 10,
+                    margin: 0,
+                    padding: "5px",
+                    listStyle: "none",
+                  }}
+                >
+                  {globalProducts
+                    .filter((p) =>
+                      p.name.toLowerCase().startsWith(globalProductName.toLowerCase())
+                    )
+                    .map((p, i) => (
+                      <li
+                        key={i}
+                        style={{
+                          padding: "5px",
+                          cursor: "pointer",
+                          borderBottom: "1px solid #eee",
+                          backgroundColor: i === highlightedIndex ? "#e9ecef" : "transparent",
+                        }}
+                        onMouseEnter={() => setHighlightedIndex(i)}
+                        onClick={() => {
+                          setGlobalProductName(p.name);
+                          setGlobalPrice(p.price);
+                          setGlobalMrp(p.mrp);
+                          setShowGlobalSuggestions(false);
+                          setHighlightedIndex(-1);
+                        }}
+                      >
+                        {p.name} - price ₹{p.price} / MRP ₹{p.mrp}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+            </div>
+
+            <div style={{ flex: "1 1 100px" }}>
+              <label style={{ display: "block", fontWeight: "bold", marginBottom: "4px" }}>Rate</label>
+              <input
+                type="number"
+                value={globalPrice}
+                onChange={(e) => setGlobalPrice(e.target.value)}
+                style={{
+                  padding: "8px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  width: "80%",
+                  fontSize: "14px",
+                  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                }}
+              />
+            </div>
+
+            <div style={{ flex: "1 1 100px" }}>
+              <label style={{ display: "block", fontWeight: "bold", marginBottom: "4px" }}>Buying Price</label>
+              <input
+                type="number"
+                value={globalBuyingPrice}
+                onChange={(e) => setGlobalBuyingPrice(e.target.value)}
+                style={{
+                  padding: "8px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  width: "100%",
+                  fontSize: "14px",
+                  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                }}
+              />
+            </div>
+
+            <div style={{ flex: "1 1 100px" }}>
+              <label style={{ display: "block", fontWeight: "bold", marginBottom: "4px" }}>MRP</label>
+              <input
+                type="number"
+                value={globalMrp}
+                onChange={(e) => setGlobalMrp(e.target.value)}
+                style={{
+                  padding: "8px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  width: "80%",
+                  fontSize: "14px",
+                  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.1)",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "1rem", alignSelf: "flex-end" }}>
+            <button
+              onClick={editGlobalIndex !== null ? handleUpdateGlobalProduct : handleAddGlobalProduct}
+              style={{
+                backgroundColor: editGlobalIndex !== null ? "#17a2b8" : "#28a745", // teal for update, green for add
+                color: "white",
+                padding: "10px 20px",
+                border: "none",
+                borderRadius: "6px",
+                fontWeight: "bold",
+                fontSize: "14px",
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+                transition: "background-color 0.3s ease",
+              }}
+              onMouseOver={(e) =>
+                (e.target.style.backgroundColor = editGlobalIndex !== null ? "#138496" : "#218838")
+              }
+              onMouseOut={(e) =>
+                (e.target.style.backgroundColor = editGlobalIndex !== null ? "#17a2b8" : "#28a745")
+              }
+            >
+              {editGlobalIndex !== null ? "✅ Update Product" : "➕ Add Product"}
+            </button>
+
+              <button onClick={handleClearGlobalProduct}
+              style={{
+                backgroundColor: "#fd7e14", // warning orange
+                color: "white",
+                padding: "10px 20px",
+                border: "none",
+                borderRadius: "6px",
+                fontWeight: "bold",
+                fontSize: "14px",
+                cursor: "pointer",
+                marginLeft: "1rem",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+                transition: "background-color 0.3s ease",
+              }}
+              onMouseOver={(e) => (e.target.style.backgroundColor = "#e96b0c")}
+              onMouseOut={(e) => (e.target.style.backgroundColor = "#fd7e14")}
+              >🧹 Clear Product</button>
+            </div>
           </div>
+        </div>
 
           {/* Custom Products */}
             {customProducts.length > 0 && (
@@ -725,20 +1201,64 @@ const exportSummaryForDateToExcel = (date) => {
 
             {/* 🛠️ Global Product List */}
             {globalProducts.length > 0 && (
-              <>
-                <h3>🛠️ Global Product Master</h3>
-                <div className="scrollable-gallery">
-                  {globalProducts.map((product, index) => (
-                    <div key={index} className="product-card">
-                      <p><strong>{product.name}</strong></p>
-                      <p>Price: ${product.price}</p>
-                      <p>MRP: ${product.mrp}</p>
-                      <button className="no-print" onClick={() => handleEditProduct(index)}>✏️ Edit</button>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+  <>
+    <h3>📦 See List of added Items</h3>
+    <ul style={{
+      listStyle: "none",
+      padding: 0,
+      margin: 0,
+      border: "1px solid #ccc",
+      borderRadius: "6px",
+      maxHeight: "250px",
+      overflowY: "auto",
+    }}>
+      {[...globalProducts]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((p, i) => (
+          <li key={i} style={{
+            padding: "8px 12px",
+            borderBottom: "1px solid #eee",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center"
+          }}>
+            <div>
+              <strong>{p.name}</strong> MRP ₹{p.mrp}/Buy Price ₹{p.buyprice}/Rate ₹{p.price}
+            </div>
+            <div>
+              <button
+                onClick={() => handleEditProduct(i)}
+                style={{
+                  marginRight: "6px",
+                  background: "#007bff",
+                  color: "white",
+                  border: "none",
+                  padding: "4px 8px",
+                  borderRadius: "4px",
+                  cursor: "pointer"
+                }}
+              >
+                ✏️ Edit
+              </button>
+              <button
+                onClick={() => handleDeleteProduct(i)}
+                style={{
+                  background: "#dc3545",
+                  color: "white",
+                  border: "none",
+                  padding: "4px 8px",
+                  borderRadius: "4px",
+                  cursor: "pointer"
+                }}
+              >
+                ❌ Delete
+              </button>
+            </div>
+          </li>
+        ))}
+    </ul>
+  </>
+)}
 
 {/* 📆 Calendar Date Picker */}
 <div className="no-print" style={{ marginBottom: "1rem" }}>
